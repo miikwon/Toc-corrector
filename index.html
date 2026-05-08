@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF TOC Corrector</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#1a1a2e;min-height:100vh}
+header{background:#1a1a2e;color:#fff;padding:16px 28px;display:flex;align-items:center;gap:12px}
+header h1{font-size:19px;font-weight:600}
+header small{margin-left:auto;opacity:.55;font-size:12px}
+.wrap{max-width:1080px;margin:0 auto;padding:24px 20px}
+.card{background:#fff;border-radius:12px;box-shadow:0 1px 5px rgba(0,0,0,.09);margin-bottom:20px}
+.drop{border:2px dashed #cbd5e0;border-radius:12px;background:#fff;padding:48px;text-align:center;cursor:pointer;transition:.2s;margin-bottom:20px}
+.drop:hover,.drop.drag{border-color:#4299e1;background:#ebf8ff}
+.drop-icon{font-size:42px;margin-bottom:10px}
+.drop h2{font-size:17px;margin-bottom:6px}
+.drop p{font-size:13px;color:#718096;line-height:1.6}
+.drop input{display:none}
+.pick-btn{display:inline-block;margin-top:14px;background:#4299e1;color:#fff;padding:9px 22px;border-radius:8px;font-size:13px;border:none;cursor:pointer;font-weight:500}
+.prog-card{padding:22px 24px;display:none}
+.prog-lbl{font-size:13px;color:#718096;margin-bottom:8px}
+.prog-bg{background:#edf2f7;border-radius:6px;height:7px}
+.prog-fill{background:#4299e1;height:7px;border-radius:6px;width:0%;transition:width .3s}
+.steps{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.stp{font-size:11px;padding:3px 10px;border-radius:20px;background:#edf2f7;color:#718096}
+.stp.go{background:#bee3f8;color:#2b6cb0}
+.stp.ok{background:#c6f6d5;color:#276749}
+.toc-sel{padding:20px 24px;display:none}
+.toc-sel h3{font-size:14px;font-weight:600;margin-bottom:8px}
+.toc-sel p{font-size:12px;color:#718096;margin-bottom:12px}
+.chips{display:flex;flex-wrap:wrap;gap:7px}
+.chip{padding:5px 13px;border-radius:20px;font-size:12px;border:1px solid #e2e8f0;cursor:pointer;background:#fff;user-select:none;transition:.15s}
+.chip.on{background:#1a1a2e;color:#fff;border-color:#1a1a2e}
+.go-btn{margin-top:14px;padding:9px 22px;background:#4299e1;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer}
+.stats{display:none;gap:14px;margin-bottom:20px}
+.sc{flex:1;background:#fff;border-radius:10px;padding:14px 18px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+.sc .n{font-size:26px;font-weight:700}
+.sc .l{font-size:11px;color:#718096;margin-top:2px}
+.sc.red .n{color:#e53e3e}
+.sc.grn .n{color:#38a169}
+.tbl-head{padding:14px 20px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between}
+.tbl-head h3{font-size:14px;font-weight:600}
+.flt-row{display:flex;gap:7px}
+.flt{padding:4px 12px;border-radius:20px;font-size:11px;border:1px solid #e2e8f0;background:#fff;cursor:pointer;color:#718096}
+.flt.on{background:#1a1a2e;color:#fff;border-color:#1a1a2e}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#f7fafc;padding:10px 14px;text-align:left;font-size:11px;color:#718096;font-weight:600;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #edf2f7}
+td{padding:10px 14px;border-bottom:1px solid #f7fafc;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafafa}
+.bx{display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700}
+.bx-ok{background:#c6f6d5;color:#276749}
+.bx-bad{background:#fed7d7;color:#c53030}
+.bx-unk{background:#fefcbf;color:#b7791f}
+.num-in{width:68px;text-align:center;border:1px solid #e2e8f0;border-radius:6px;padding:4px 6px;font-size:12px;font-weight:600;color:#1a1a2e}
+.num-in.edited{border-color:#4299e1;background:#ebf8ff}
+.num-in:focus{outline:none;border-color:#4299e1}
+.conf{font-size:10px;color:#a0aec0}
+.conf.hi{color:#38a169}
+.conf.lo{color:#e53e3e}
+.act-bar{display:none;padding:16px 22px;align-items:center;justify-content:space-between}
+.act-bar p{font-size:13px;color:#718096}
+.btns{display:flex;gap:9px}
+.btn{padding:9px 20px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:none}
+.btn-g{background:#38a169;color:#fff}
+.btn-g:hover{background:#2f855a}
+.btn-g:disabled{background:#a0aec0;cursor:not-allowed}
+.btn-s{background:#edf2f7;color:#2d3748}
+.alert{padding:10px 16px;border-radius:8px;font-size:12px;margin-bottom:14px;display:none}
+.alert-ok{background:#c6f6d5;color:#276749}
+.alert-err{background:#fed7d7;color:#c53030}
+</style>
+</head>
+<body>
+<header>
+  <span>📋</span>
+  <h1>PDF Table of Contents Corrector</h1>
+  <small>Upload · Scan · Fix · Download</small>
+</header>
+<div class="wrap">
+  <div class="alert alert-ok" id="aOk"></div>
+  <div class="alert alert-err" id="aErr"></div>
+
+  <div class="drop card" id="dropZone">
+    <div class="drop-icon">📄</div>
+    <h2>Drop your PDF here to get started</h2>
+    <p>The tool scans every page, compares it against the Table of Contents,<br>and flags page number mismatches so you can download a corrected copy.</p>
+    <label class="pick-btn">Choose PDF<input type="file" id="filePick" accept=".pdf"></label>
+  </div>
+
+  <div class="card prog-card" id="progCard">
+    <div class="prog-lbl" id="progLbl">Loading…</div>
+    <div class="prog-bg"><div class="prog-fill" id="progFill"></div></div>
+    <div class="steps">
+      <div class="stp" id="s1">📖 Read PDF</div>
+      <div class="stp" id="s2">📑 Parse TOC</div>
+      <div class="stp" id="s3">🔍 Scan pages</div>
+      <div class="stp" id="s4">🧮 Match entries</div>
+    </div>
+  </div>
+
+  <div class="card toc-sel" id="tocSel">
+    <h3>Confirm Table of Contents pages</h3>
+    <p>These pages were auto-detected as containing the TOC. Toggle to adjust, then click Analyze.</p>
+    <div class="chips" id="chipBox"></div>
+    <button class="go-btn" id="goBtn">Analyze →</button>
+  </div>
+
+  <div class="stats" id="statsRow">
+    <div class="sc"><div class="n" id="nTotal">0</div><div class="l">TOC entries</div></div>
+    <div class="sc red"><div class="n" id="nWrong">0</div><div class="l">Mismatches</div></div>
+    <div class="sc grn"><div class="n" id="nOk">0</div><div class="l">Correct</div></div>
+    <div class="sc"><div class="n" id="nMiss">0</div><div class="l">Not found</div></div>
+  </div>
+
+  <div class="card" id="resCard" style="display:none">
+    <div class="tbl-head">
+      <h3 id="matchMethod">TOC Entries</h3>
+      <div class="flt-row">
+        <button class="flt on" onclick="flt('all',this)">All</button>
+        <button class="flt" onclick="flt('bad',this)">⚠ Mismatches</button>
+        <button class="flt" onclick="flt('ok',this)">✓ Correct</button>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Entry</th><th>TOC Says</th><th>Found On</th><th>Fix To</th><th>Confidence</th><th>Status</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="card act-bar" id="actBar">
+    <p id="actMsg">Edit any "Fix To" values then download.</p>
+    <div class="btns">
+      <button class="btn btn-s" onclick="doReset()">↩ Start Over</button>
+      <button class="btn btn-g" id="dlBtn" onclick="makePDF()">⬇ Download Corrected PDF</button>
+    </div>
+  </div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+var rawPDF = null, pdfJsDoc = null, nPages = 0, tocIdxs = [], entries = [];
+
+// ── UPLOAD ────────────────────────────────────────────────────────────────────
+var dz = document.getElementById('dropZone');
+var fp = document.getElementById('filePick');
+dz.addEventListener('dragover', function(e){ e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', function(){ dz.classList.remove('drag'); });
+dz.addEventListener('drop', function(e){ e.preventDefault(); dz.classList.remove('drag'); loadFile(e.dataTransfer.files[0]); });
+fp.addEventListener('change', function(){ loadFile(fp.files[0]); });
+
+async function loadFile(file) {
+  if (!file || !file.name.toLowerCase().endsWith('.pdf')) { showErr('Please choose a PDF file.'); return; }
+  rawPDF = await file.arrayBuffer();
+  await openPDF();
+}
+
+// ── OPEN PDF ──────────────────────────────────────────────────────────────────
+async function openPDF() {
+  elHide('dropZone');
+  elShow('progCard');
+  setStep(1, 'go');
+  setProgress(10, 'Loading PDF…');
+  try {
+    pdfJsDoc = await pdfjsLib.getDocument({ data: rawPDF.slice(0) }).promise;
+    nPages = pdfJsDoc.numPages;
+    setStep(1, 'ok');
+    setStep(2, 'go');
+    setProgress(20, 'Looking for TOC pages…');
+
+    var found = [];
+    var scanTo = Math.min(25, nPages);
+    for (var i = 1; i <= scanTo; i++) {
+      var txt = await getPageText(i);
+      if (/table\s+of\s+contents/i.test(txt) ||
+          (/lesson\s+\d/i.test(txt) && /\.\s*\d{1,3}/.test(txt))) {
+        found.push(i - 1);
+      }
+      setProgress(20 + Math.round(i / scanTo * 10));
+    }
+    if (!found.length) {
+      for (var j = 1; j < Math.min(8, nPages); j++) found.push(j);
+    }
+    tocIdxs = found;
+    setStep(2, 'ok');
+    elHide('progCard');
+    buildChips(found);
+  } catch(e) {
+    showErr('Could not open PDF: ' + e.message);
+    elHide('progCard');
+    elShow('dropZone');
+  }
+}
+
+// ── TOC PAGE CHIPS ────────────────────────────────────────────────────────────
+function buildChips(sel) {
+  var box = document.getElementById('chipBox');
+  box.innerHTML = '';
+  var showCount = Math.min(nPages, 40);
+  for (var i = 0; i < showCount; i++) {
+    var c = document.createElement('div');
+    c.className = 'chip' + (sel.indexOf(i) >= 0 ? ' on' : '');
+    c.textContent = 'p.' + (i + 1);
+    c.dataset.i = i;
+    c.addEventListener('click', function(){ this.classList.toggle('on'); });
+    box.appendChild(c);
+  }
+  elShow('tocSel');
+  document.getElementById('goBtn').onclick = runAnalysis;
+}
+
+// ── ANALYSIS ──────────────────────────────────────────────────────────────────
+async function runAnalysis() {
+  var selected = Array.from(document.querySelectorAll('.chip.on'));
+  tocIdxs = selected.map(function(c){ return parseInt(c.dataset.i); }).filter(function(n){ return !isNaN(n); });
+  if (!tocIdxs.length) { showErr('Select at least one TOC page.'); return; }
+
+  elHide('tocSel');
+  elShow('progCard');
+  setStep(2, 'go');
+  setProgress(25, 'Parsing TOC text…');
+
+  var rawEntries = await parseTOC(tocIdxs);
+
+  setStep(2, 'ok');
+  setStep(3, 'go');
+  setProgress(35, 'Scanning pages…');
+
+  var pageHeads = await buildPageHeadMap(function(pgIdx){
+    setProgress(35 + Math.round(pgIdx / nPages * 45));
+  });
+
+  setStep(3, 'ok');
+  setStep(4, 'go');
+  setProgress(82, 'Matching entries…');
+
+  var outline = await getPDFOutline();
+  entries = matchAll(rawEntries, pageHeads, outline);
+
+  setStep(4, 'ok');
+  setProgress(100, 'Done!');
+
+  setTimeout(function(){ elHide('progCard'); renderResults(entries); }, 350);
+}
+
+// ── PARSE TOC ─────────────────────────────────────────────────────────────────
+async function parseTOC(idxs) {
+  var result = [];
+  for (var k = 0; k < idxs.length; k++) {
+    var pgIdx = idxs[k];
+    var page = await pdfJsDoc.getPage(pgIdx + 1);
+    var tc = await page.getTextContent();
+    var lines = itemsToLines(tc.items);
+
+    for (var li = 0; li < lines.length; li++) {
+      var line = lines[li];
+      var raw = line.map(function(it){ return it.str; }).join('').trim();
+
+      // Match lines ending with a page number: "Title ..... 42" or "Title    42"
+      var m = raw.match(/^(.+?)\s*[.\s]{3,}\s*(\d{1,4})\s*$/)
+           || raw.match(/^(.+\S)\s{3,}(\d{1,4})\s*$/)
+           || raw.match(/^(.+\S)\s+(\d{1,4})\s*$/);
+      if (!m) continue;
+
+      var name = m[1].replace(/[.\s]+$/, '').trim();
+      var pg = parseInt(m[2]);
+      if (name.length < 4 || pg < 1 || pg > 99999) continue;
+      if (/table\s+of\s+contents/i.test(name)) continue;
+      if (/^i+v*$|^v+i*$/i.test(name)) continue; // roman numeral page markers
+
+      // Find the text item(s) that contain the page number for later overlay
+      var pgItems = line.filter(function(it){ return it.str.trim() === m[2]; });
+
+      result.push({ name: name, tocPg: pg, items: pgItems, pgIdx: pgIdx });
+    }
+  }
+  return result;
+}
+
+// ── BUILD PAGE HEAD MAP ───────────────────────────────────────────────────────
+async function buildPageHeadMap(onProgress) {
+  var rawData = {};
+  var tocSet = {};
+  for (var t = 0; t < tocIdxs.length; t++) tocSet[tocIdxs[t]] = true;
+
+  // ── Pass 1: scan every page, collect visible strip num + InDesign metadata num separately ──
+  for (var pgIdx = 0; pgIdx < nPages; pgIdx++) {
+    if (tocSet[pgIdx]) { onProgress(pgIdx); continue; }
+
+    var page = await pdfJsDoc.getPage(pgIdx + 1);
+    var tc = await page.getTextContent();
+    var lines = itemsToLines(tc.items).map(function(l){
+      return l.map(function(it){ return it.str; }).join('').trim();
+    }).filter(function(s){ return s.length > 0; });
+
+    var headLines = lines.slice(0, 10);
+    var headTxt = headLines.join(' ');
+    var fullTxt = lines.join(' ');
+
+    var lessonNum = null, sectionLbl = null, titleLines = [];
+    for (var li = 0; li < headLines.length; li++) {
+      var ln = headLines[li].trim();
+      var lm = ln.match(/^(?:lesson|les\.?)\s*(\d+)\s*$/i);
+      var sm = ln.match(/^section\s+([a-zA-Z])\b/i);
+      if (lm) { lessonNum = parseInt(lm[1]); titleLines = headLines.slice(li + 1, li + 4); }
+      else if (sm) { sectionLbl = sm[1].toUpperCase(); }
+    }
+
+    var visibleNum = extractVisiblePageNum(tc.items, pgIdx); // strip/margin only
+    var indbNum    = extractIndbNum(tc.items);               // InDesign metadata only
+
+    rawData[pgIdx] = { headTxt: headTxt, fullTxt: fullTxt, lines: lines,
+      lessonNum: lessonNum, sectionLbl: sectionLbl, titleLines: titleLines,
+      visibleNum: visibleNum, indbNum: indbNum };
+    onProgress(pgIdx);
+  }
+
+  // ── Compute renumber offset from pages that have BOTH numbers and differ significantly ──
+  // e.g. visibleNum=155 + indbNum=657 → offset = -502  (renumbered PDF)
+  // Pages where both agree (offset≈0) are NOT renumbered — exclude them.
+  var offsets = [];
+  for (var pi in rawData) {
+    var d = rawData[pi];
+    if (d.visibleNum !== null && d.indbNum !== null) {
+      var diff = d.visibleNum - d.indbNum;
+      if (Math.abs(diff) > 50) offsets.push(diff); // only include meaningful differences
+    }
+  }
+  // Mode of collected offsets
+  var dominantOffset = null;
+  if (offsets.length) {
+    var tally = {};
+    offsets.forEach(function(v){ tally[v] = (tally[v] || 0) + 1; });
+    var best = null, bestCt = 0;
+    for (var k in tally) { if (tally[k] > bestCt) { bestCt = tally[k]; best = parseInt(k); } }
+    dominantOffset = best;
+  }
+
+  // ── Pass 2: resolve printedPg for every page ──────────────────────────────
+  var map = {};
+  for (var pi2 in rawData) {
+    var d2 = rawData[pi2];
+    var printedPg;
+    if (d2.visibleNum !== null) {
+      printedPg = d2.visibleNum;                          // visible footer/header always wins
+    } else if (d2.indbNum !== null && dominantOffset !== null) {
+      printedPg = d2.indbNum + dominantOffset;            // apply detected offset to stale metadata
+    } else {
+      printedPg = null;                                   // genuinely unknown
+    }
+    map[pi2] = { headTxt: d2.headTxt, fullTxt: d2.fullTxt, lines: d2.lines,
+      lessonNum: d2.lessonNum, sectionLbl: d2.sectionLbl, titleLines: d2.titleLines,
+      printedPg: printedPg };
+  }
+  return map;
+}
+
+// ── EXTRACT VISIBLE PAGE NUMBER (strip + margin only, NO metadata) ────────────
+// Returns the printed page number as it visually appears in the footer/header
+// or outer margin. Does NOT use InDesign metadata — see extractIndbNum() for that.
+function extractVisiblePageNum(items, pgIdx) {
+  if (!items || !items.length) return null;
+
+  var maxY = 0, maxX = 0;
+  for (var j = 0; j < items.length; j++) {
+    if (items[j].transform[5] > maxY) maxY = items[j].transform[5];
+    var rx = items[j].transform[4] + (items[j].width || 0);
+    if (rx > maxX) maxX = rx;
+  }
+  if (!maxY) return null;
+
+  var stripH = maxY * 0.12;
+
+  function numsInStrip(lo, hi) {
+    return items
+      .filter(function(it) {
+        var y = it.transform[5];
+        return y >= lo && y <= hi && /^\d+$/.test(it.str.trim());
+      })
+      .map(function(it) { return { val: parseInt(it.str.trim()), x: it.transform[4] }; })
+      .filter(function(n) { return n.val >= 1 && n.val <= 99999; });
+  }
+
+  function pickOuterNum(nums) {
+    if (!nums.length) return null;
+    nums.sort(function(a, b) { return (pgIdx % 2 === 0) ? b.x - a.x : a.x - b.x; });
+    return nums[0].val;
+  }
+
+  // Footer first (bottom 12%), then header (top 12%)
+  var r = pickOuterNum(numsInStrip(0, stripH));
+  if (r !== null) return r;
+  r = pickOuterNum(numsInStrip(maxY - stripH, maxY));
+  if (r !== null) return r;
+
+  // Outer left/right margins at any height (side-margin page numbers)
+  if (maxX) {
+    var mw = maxX * 0.08;
+    var mNums = items
+      .filter(function(it) {
+        var x = it.transform[4];
+        return (x <= mw || x >= maxX - mw) && /^\d+$/.test(it.str.trim());
+      })
+      .map(function(it) { return { val: parseInt(it.str.trim()), x: it.transform[4] }; })
+      .filter(function(n) { return n.val >= 1 && n.val <= 99999; });
+    r = pickOuterNum(mNums);
+    if (r !== null) return r;
+  }
+
+  return null;
+}
+
+// ── EXTRACT INDESIGN METADATA PAGE NUMBER ────────────────────────────────────
+// Reads the production metadata string like "BookName.indb Page 507 ..."
+// This holds the ORIGINAL (pre-renumber) page number. Used only for offset
+// detection — not directly as the printed page number.
+function extractIndbNum(items) {
+  if (!items || !items.length) return null;
+  // Single-item match
+  for (var i = 0; i < items.length; i++) {
+    var m = items[i].str.match(/\.indb\s+Page\s+(\d+)/i);
+    if (m) { var v = parseInt(m[1]); if (v >= 1 && v <= 99999) return v; }
+  }
+  // Split across adjacent items — join all and search
+  var joined = items.map(function(it) { return it.str; }).join(' ');
+  var jm = joined.match(/\.indb\s*Page\s*(\d+)/i);
+  if (jm) { var jv = parseInt(jm[1]); if (jv >= 1 && jv <= 99999) return jv; }
+  return null;
+}
+
+// ── PDF OUTLINE ───────────────────────────────────────────────────────────────
+async function getPDFOutline() {
+  try {
+    var outline = await pdfJsDoc.getOutline();
+    if (!outline || !outline.length) return null;
+    var flat = [];
+    async function walk(items) {
+      for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        var pg = null;
+        if (item.dest) {
+          try {
+            var dest = (typeof item.dest === 'string') ? await pdfJsDoc.getDestination(item.dest) : item.dest;
+            if (dest) pg = (await pdfJsDoc.getPageIndex(dest[0])) + 1;
+          } catch(e) {}
+        }
+        flat.push({ title: item.title, pg: pg });
+        if (item.items && item.items.length) await walk(item.items);
+      }
+    }
+    await walk(outline);
+    return flat;
+  } catch(e) { return null; }
+}
+
+// ── MATCH ALL ─────────────────────────────────────────────────────────────────
+// usedIdxs tracks page *indices* to prevent duplicate assignments.
+// actualPg is always the *printed* footer number from the matched page.
+function matchAll(rawEntries, pageHeads, outline) {
+  var usedIdxs = {};
+
+  // Helper: given a matched pgIdx, return the printed page number
+  function printed(pgIdx) {
+    var info = pageHeads[pgIdx];
+    return (info && info.printedPg != null) ? info.printedPg : (pgIdx + 1);
+  }
+
+  // First pass: match every entry independently
+  var results = rawEntries.map(function(e, i) {
+    var actualPg = null, matchedIdx = null, conf = 0, method = '';
+
+    // Method 1: PDF outline — resolve to printed page number of that PDF index
+    if (outline) {
+      var om = findOutlineMatch(e.name, outline);
+      if (om && om.pg) {
+        var oIdx = om.pg - 1; // outline gives PDF-1-indexed page
+        actualPg = printed(oIdx);
+        matchedIdx = oIdx;
+        conf = 0.99; method = 'bookmark';
+      }
+    }
+
+    // Method 2: Lesson/Section number match
+    if (actualPg === null) {
+      var nm = matchByNumber(e.name, pageHeads, usedIdxs);
+      if (nm) { matchedIdx = nm.idx; actualPg = printed(nm.idx); conf = nm.conf; method = 'lesson#'; }
+    }
+
+    // Method 3: Title text at top of page
+    if (actualPg === null) {
+      var tm = matchByTitle(e.name, e.tocPg, pageHeads, usedIdxs);
+      if (tm) { matchedIdx = tm.idx; actualPg = printed(tm.idx); conf = tm.conf; method = 'title'; }
+    }
+
+    if (matchedIdx !== null) usedIdxs[matchedIdx] = true;
+
+    return {
+      name: e.name,
+      tocPg: e.tocPg,
+      actualPg: actualPg,
+      conf: conf,
+      method: method,
+      items: e.items,
+      pgIdx: e.pgIdx,
+      fixTo: actualPg !== null ? actualPg : e.tocPg,
+      edited: false
+    };
+  });
+
+  // Second pass: Section entries always share the page of the next entry.
+  // Walk backwards so a section following another section still resolves correctly.
+  for (var i = results.length - 2; i >= 0; i--) {
+    var isSection = /^section\s+[a-zA-Z]\b/i.test(results[i].name)
+                 || /^unit\s+\d+/i.test(results[i].name);
+    if (isSection) {
+      var next = results[i + 1];
+      if (next.actualPg !== null) {
+        results[i].actualPg = next.actualPg;
+        results[i].conf     = next.conf;
+        results[i].method   = 'section→next';
+        results[i].fixTo    = next.actualPg;
+      }
+    }
+  }
+
+  return results;
+}
+
+function findOutlineMatch(name, outline) {
+  var n = normStr(name);
+  var best = null, bestScore = 0;
+  for (var i = 0; i < outline.length; i++) {
+    var o = outline[i];
+    if (!o.pg) continue;
+    var s = strSim(n, normStr(o.title));
+    if (s > bestScore && s > 0.6) { bestScore = s; best = o; }
+  }
+  return best;
+}
+
+function matchByNumber(name, pageHeads, usedIdxs) {
+  var lm = name.match(/lesson\s*(\d+)/i);
+  var sm = name.match(/section\s+([a-zA-Z])\b/i);
+  if (!lm && !sm) return null;
+
+  var lessonNum = lm ? parseInt(lm[1]) : null;
+  var sectionLbl = sm ? sm[1].toUpperCase() : null;
+
+  var titlePart = name.replace(/^lesson\s*\d+\s*/i, '').replace(/^section\s+[a-zA-Z]\s*/i, '').trim();
+  var titleWords = getSigWords(titlePart);
+
+  var best = null, bestScore = 0;
+  var pgIdxKeys = Object.keys(pageHeads);
+  for (var k = 0; k < pgIdxKeys.length; k++) {
+    var pgIdx = parseInt(pgIdxKeys[k]);
+    var info = pageHeads[pgIdx];
+    if (usedIdxs[pgIdx]) continue;
+
+    var numMatch = false;
+    if (lessonNum !== null && info.lessonNum === lessonNum) numMatch = true;
+    if (sectionLbl !== null && info.sectionLbl === sectionLbl) numMatch = true;
+    if (!numMatch) continue;
+
+    var titleTxt = (info.titleLines || []).join(' ').toLowerCase();
+    var hits = 0;
+    for (var w = 0; w < titleWords.length; w++) {
+      if (titleTxt.indexOf(titleWords[w]) >= 0) hits++;
+    }
+    var score = titleWords.length > 0 ? hits / titleWords.length : 0.5;
+    if (score > bestScore) { bestScore = score; best = { idx: pgIdx, conf: 0.7 + score * 0.25 }; }
+  }
+  return best;
+}
+
+function matchByTitle(name, hint, pageHeads, usedIdxs) {
+  var words = getSigWords(name);
+  if (!words.length) return null;
+
+  var scored = [];
+  var pgIdxKeys = Object.keys(pageHeads);
+  for (var k = 0; k < pgIdxKeys.length; k++) {
+    var pgIdx = parseInt(pgIdxKeys[k]);
+    var info = pageHeads[pgIdx];
+    if (usedIdxs[pgIdx]) continue;
+
+    var topTxt = info.headTxt.toLowerCase();
+    var hits = 0;
+    for (var w = 0; w < words.length; w++) {
+      if (topTxt.indexOf(words[w]) >= 0) hits++;
+    }
+    var score = hits / words.length;
+    // Use printed page for proximity hint if available
+    var printedHint = info.printedPg || (pgIdx + 1);
+    if (score >= 0.6) scored.push({ idx: pgIdx, score: score, dist: Math.abs(printedHint - hint) });
+  }
+  if (!scored.length) return null;
+  scored.sort(function(a, b){ return b.score - a.score || a.dist - b.dist; });
+  return { idx: scored[0].idx, conf: scored[0].score * 0.8 };
+}
+
+// ── TEXT HELPERS ──────────────────────────────────────────────────────────────
+function normStr(s) {
+  return s.toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function getSigWords(s) {
+  var stop = ['the','and','of','in','to','a','an','with','for','on','at','by','from','about','into','more','all','our','find','who','make','tell','sort','count','let','use','one','two','three','four','five'];
+  return s.toLowerCase().replace(/[^\w\s]/g, ' ').split(/\s+/).filter(function(w){
+    return w.length > 3 && stop.indexOf(w) < 0;
+  });
+}
+function strSim(a, b) {
+  var wa = a.split(/\s+/), wb = b.split(/\s+/);
+  var setB = {};
+  for (var i = 0; i < wb.length; i++) setB[wb[i]] = true;
+  var inter = 0;
+  for (var j = 0; j < wa.length; j++) if (setB[wa[j]]) inter++;
+  return inter / Math.max(wa.length, wb.length, 1);
+}
+async function getPageText(pgNum) {
+  var page = await pdfJsDoc.getPage(pgNum);
+  var tc = await page.getTextContent();
+  return tc.items.map(function(it){ return it.str; }).join(' ');
+}
+function itemsToLines(items, tol) {
+  tol = tol || 3;
+  var sorted = items.slice().sort(function(a, b) {
+    var dy = b.transform[5] - a.transform[5];
+    return Math.abs(dy) > tol ? dy : a.transform[4] - b.transform[4];
+  });
+  var lines = [], cur = [], lastY = null;
+  for (var i = 0; i < sorted.length; i++) {
+    var it = sorted[i];
+    var y = it.transform[5];
+    if (lastY !== null && Math.abs(y - lastY) > tol) {
+      if (cur.length) lines.push(cur);
+      cur = [];
+    }
+    cur.push(it);
+    lastY = y;
+  }
+  if (cur.length) lines.push(cur);
+  return lines;
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function renderResults(ents) {
+  var tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  var nw = 0, no = 0, nm = 0;
+
+  for (var i = 0; i < ents.length; i++) {
+    var e = ents[i];
+    var wrong = e.actualPg !== null && e.actualPg !== e.tocPg;
+    var miss = e.actualPg === null;
+    if (wrong) nw++; else if (miss) nm++; else no++;
+
+    var tr = document.createElement('tr');
+    tr.dataset.st = wrong ? 'bad' : (miss ? 'unk' : 'ok');
+
+    var badge = wrong ? '<span class="bx bx-bad">⚠ Wrong</span>'
+              : miss  ? '<span class="bx bx-unk">? Unknown</span>'
+                      : '<span class="bx bx-ok">✓ OK</span>';
+
+    var confPct = e.actualPg ? Math.round(e.conf * 100) : 0;
+    var confCls = confPct >= 80 ? 'hi' : confPct >= 50 ? '' : 'lo';
+    var confLbl = e.actualPg ? (confPct + '% ' + e.method) : '—';
+
+    var foundCell = e.actualPg !== null
+      ? '<b style="color:' + (wrong ? '#e53e3e' : '#38a169') + '">' + e.actualPg + '</b>'
+      : '<span style="color:#cbd5e0">—</span>';
+
+    tr.innerHTML =
+      '<td style="color:#a0aec0;font-size:11px">' + (i + 1) + '</td>' +
+      '<td style="max-width:280px;font-weight:500">' + escHtml(e.name) + '</td>' +
+      '<td style="font-weight:600">' + e.tocPg + '</td>' +
+      '<td>' + foundCell + '</td>' +
+      '<td><input class="num-in' + (wrong ? ' edited' : '') + '" id="fi' + i + '" type="number"' +
+        ' value="' + (e.fixTo || e.tocPg) + '" min="1" max="' + nPages + '"' +
+        ' onchange="onChg(' + i + ',this.value)"></td>' +
+      '<td><span class="conf ' + confCls + '">' + confLbl + '</span></td>' +
+      '<td>' + badge + '</td>';
+    tbody.appendChild(tr);
+  }
+
+  document.getElementById('nTotal').textContent = ents.length;
+  document.getElementById('nWrong').textContent = nw;
+  document.getElementById('nOk').textContent = no;
+  document.getElementById('nMiss').textContent = nm;
+
+  var sr = document.getElementById('statsRow');
+  sr.style.cssText = 'display:flex;gap:14px;margin-bottom:20px';
+  document.getElementById('resCard').style.display = 'block';
+  var ab = document.getElementById('actBar');
+  ab.style.cssText = 'display:flex;padding:16px 22px;align-items:center;justify-content:space-between';
+
+  document.getElementById('matchMethod').textContent =
+    'TOC Entries — ' + ents.length + ' found, ' + nw + ' wrong, ' + nm + ' unmatched';
+  document.getElementById('actMsg').textContent = nw
+    ? nw + ' mismatch' + (nw > 1 ? 'es' : '') + ' found — edit "Fix To" values as needed, then download.'
+    : 'All TOC entries appear correct. You can still download a clean copy.';
+}
+
+function onChg(i, v) {
+  var p = parseInt(v);
+  if (!isNaN(p) && p >= 1 && p <= nPages) {
+    entries[i].fixTo = p;
+    entries[i].edited = (p !== entries[i].tocPg);
+    var inp = document.getElementById('fi' + i);
+    if (inp) inp.classList.toggle('edited', entries[i].edited);
+  }
+}
+
+function flt(type, btn) {
+  document.querySelectorAll('.flt').forEach(function(b){ b.classList.remove('on'); });
+  btn.classList.add('on');
+  document.querySelectorAll('#tbody tr').forEach(function(tr){
+    tr.style.display = (type === 'all') ? '' : (tr.dataset.st === type ? '' : 'none');
+  });
+}
+
+// ── GENERATE PDF ──────────────────────────────────────────────────────────────
+async function makePDF() {
+  var btn = document.getElementById('dlBtn');
+  btn.disabled = true; btn.textContent = '⏳ Building…';
+  try {
+    var bold = null, reg = null;
+    var doc = await PDFLib.PDFDocument.load(rawPDF);
+    bold = await doc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+    reg  = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+    var pages = doc.getPages();
+
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      var inp = document.getElementById('fi' + i);
+      var newPg = inp ? parseInt(inp.value) : e.fixTo;
+      if (isNaN(newPg) || newPg === e.tocPg) continue;
+
+      var pg = pages[e.pgIdx];
+      if (!pg) continue;
+
+      if (e.items && e.items.length) {
+        for (var j = 0; j < e.items.length; j++) {
+          var it = e.items[j];
+          var tx = it.transform[4], ty = it.transform[5];
+          var fs = Math.max(Math.abs(it.transform[3]), 9);
+          pg.drawRectangle({ x: tx - 1, y: ty - 2, width: it.width + 12, height: fs + 5, color: PDFLib.rgb(1, 1, 1) });
+          pg.drawText(String(newPg), { x: tx, y: ty, size: fs, font: bold, color: PDFLib.rgb(0, 0, 0) });
+        }
+      } else {
+        var h = pg.getSize().height;
+        pg.drawText('[' + e.name.slice(0, 28) + ': ' + e.tocPg + '→' + newPg + ']',
+          { x: 18, y: h - 18 - (i * 11), size: 6.5, font: reg, color: PDFLib.rgb(0.8, 0.15, 0.15) });
+      }
+    }
+
+    var out = await doc.save();
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([out], { type: 'application/pdf' }));
+    a.download = 'corrected_toc.pdf';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    showOk('✅ Corrected PDF downloaded!');
+  } catch(e) {
+    showErr('PDF generation failed: ' + e.message);
+    console.error(e);
+  } finally {
+    btn.disabled = false; btn.textContent = '⬇ Download Corrected PDF';
+  }
+}
+
+// ── UI HELPERS ────────────────────────────────────────────────────────────────
+function setProgress(p, lbl) {
+  document.getElementById('progFill').style.width = p + '%';
+  if (lbl) document.getElementById('progLbl').textContent = lbl;
+}
+function setStep(n, st) {
+  var el = document.getElementById('s' + n);
+  var lbls = ['', 'Read PDF', 'Parse TOC', 'Scan pages', 'Match entries'];
+  el.className = 'stp ' + st;
+  el.textContent = (st === 'ok' ? '✓ ' : st === 'go' ? '⏳ ' : '') + lbls[n];
+}
+function elShow(id) { document.getElementById(id).style.display = 'block'; }
+function elHide(id) { document.getElementById(id).style.display = 'none'; }
+function showOk(m) { var el = document.getElementById('aOk'); el.textContent = m; el.style.display = 'block'; setTimeout(function(){ el.style.display = 'none'; }, 5000); }
+function showErr(m) { var el = document.getElementById('aErr'); el.textContent = m; el.style.display = 'block'; setTimeout(function(){ el.style.display = 'none'; }, 7000); }
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function doReset() {
+  rawPDF = null; pdfJsDoc = null; entries = [];
+  elShow('dropZone');
+  ['tocSel','progCard','resCard'].forEach(function(id){ elHide(id); });
+  document.getElementById('statsRow').style.display = 'none';
+  document.getElementById('actBar').style.display = 'none';
+  document.getElementById('filePick').value = '';
+}
+</script>
+</body>
+</html>
